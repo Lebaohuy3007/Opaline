@@ -1,7 +1,8 @@
 #!/bin/bash
 # make_ipa.sh — builds a distributable IPA for jailbroken devices (AppSync + Filza)
 # Usage: ./make_ipa.sh
-# Output: Opaline_<version>.ipa in the project root
+#        EXCLUDE_OPENIN_APPEX=1 UPDATE_SOURCE=0 ./make_ipa.sh
+# Output: Opaline_<version>.ipa (or Opaline_<version>_NoOpenIn.ipa for test builds)
 #
 # Env overrides (all optional; used by .github/workflows/build-release.yml):
 #   IPA_VERSION            version for the filename + CFBundleShortVersionString
@@ -10,13 +11,15 @@
 #   UPDATE_SOURCE=0        skip patching source/apps.json (CI patches it only
 #                          after the release is published, so the URL is live)
 #   XCODEBUILD_EXTRA_ARGS  extra xcodebuild args, e.g. CODE_SIGNING_ALLOWED=NO
+#   EXCLUDE_OPENIN_APPEX=1 package a test IPA without PlugIns/OpalineOpenIn.appex
+#                          (does not change the Xcode build or extension target)
 
 set -e
 
 APP_NAME="Opaline"
 PROJECT="Opaline.xcodeproj"
 SCHEME="Opaline"
-RELEASE_BUNDLE_ID="com.verback.YTLite"
+RELEASE_BUNDLE_ID="com.verback.YTLiteFork"
 SOURCE_JSON="source/apps.json"
 BUILD_LOG=$(mktemp)
 
@@ -47,7 +50,6 @@ BUILD_SETTINGS=$(xcodebuild \
 
 BUILD_DIR=$(echo "$BUILD_SETTINGS" | grep "^ *BUILT_PRODUCTS_DIR" | head -1 | awk -F' = ' '{print $2}')
 VERSION="${IPA_VERSION:-$(echo "$BUILD_SETTINGS" | grep "^ *MARKETING_VERSION" | head -1 | awk -F' = ' '{print $2}')}"
-OUTPUT="${APP_NAME}_${VERSION}.ipa"
 
 APP_PATH="$BUILD_DIR/$APP_NAME.app"
 
@@ -55,6 +57,21 @@ if [ ! -d "$APP_PATH" ]; then
   echo "❌ Build failed or app not found at: $APP_PATH"
   exit 1
 fi
+
+if [ "${EXCLUDE_OPENIN_APPEX:-0}" = "1" ]; then
+  STAGING_DIR=$(mktemp -d)
+  trap 'rm -rf "$STAGING_DIR"' EXIT
+  mkdir -p "$STAGING_DIR/Payload"
+  cp -R "$APP_PATH" "$STAGING_DIR/Payload/$APP_NAME.app"
+  APP_PATH="$STAGING_DIR/Payload/$APP_NAME.app"
+  OUTPUT_SUFFIX="_NoOpenIn"
+  UPDATE_SOURCE=0
+  echo "▶ Experimental build: excluding all .appex bundles from the IPA"
+  find "$APP_PATH" -name '*.appex' -prune -print -exec rm -rf {} +
+else
+  OUTPUT_SUFFIX=""
+fi
+OUTPUT="${APP_NAME}_${VERSION}${OUTPUT_SUFFIX}.ipa"
 
 echo "▶ Replacing bundle ID for release: $RELEASE_BUNDLE_ID"
 plutil -replace CFBundleIdentifier -string "$RELEASE_BUNDLE_ID" "$APP_PATH/Info.plist"
@@ -87,8 +104,8 @@ done
 # installs are keyed to it, so it must never change between releases (changing
 # it logs every AppSync user out once). It is an arbitrary string for ad-hoc
 # signing — no Apple registration involved — and is intentionally independent
-# of the dev bundle id in Local.xcconfig. Normalized from the accidental
-# "WD55N799QB.…YTLite.test" of 1.4.0/1.4.1 to the main team; frozen since.
+# of the development team configured in Local.xcconfig. The Fork bundle ID
+# gives this build its own app and keychain identity.
 # A local (signed) build embeds the dev provisioning profile; CI builds with
 # CODE_SIGNING_ALLOWED=NO do not. It names the dev certificate while the
 # signature below is ad-hoc, and installd rejects that pair with 0xe800801c.
@@ -102,7 +119,7 @@ cat > "$ENTITLEMENTS" <<'EOF'
 <plist version="1.0">
 <dict>
 	<key>application-identifier</key>
-	<string>4RAT6786W6.com.verback.YTLite</string>
+	<string>4RAT6786W6.com.verback.YTLiteFork</string>
 	<key>com.apple.developer.team-identifier</key>
 	<string>4RAT6786W6</string>
 	<key>get-task-allow</key>
@@ -122,7 +139,7 @@ done
 if [ -d "$APPEX_PATH" ]; then
   rm -f "$APPEX_PATH/embedded.mobileprovision"
   APPEX_ENTITLEMENTS=$(mktemp).plist
-  sed 's|com.verback.YTLite<|com.verback.YTLite.OpenIn<|' "$ENTITLEMENTS" \
+  sed "s|${RELEASE_BUNDLE_ID}<|${RELEASE_BUNDLE_ID}.OpenIn<|" "$ENTITLEMENTS" \
     > "$APPEX_ENTITLEMENTS"
   codesign -f -s - --entitlements "$APPEX_ENTITLEMENTS" "$APPEX_PATH" 2>/dev/null \
     && echo "  codesign (extension): ok" \
@@ -163,7 +180,35 @@ echo "▶ Packaging IPA..."
 TMP=$(mktemp -d)
 mkdir "$TMP/Payload"
 cp -r "$APP_PATH" "$TMP/Payload/"
+if [ "${EXCLUDE_OPENIN_APPEX:-0}" = "1" ]; then
+  REMAINING_APPEX=$(find "$TMP/Payload" -name '*.appex' -print -quit)
+  if [ -n "$REMAINING_APPEX" ]; then
+    echo "❌ Experimental packaging failed: app extension remains at $REMAINING_APPEX"
+    rm -rf "$TMP"
+    exit 1
+  fi
+fi
 (cd "$TMP" && zip -qr "$OLDPWD/$OUTPUT" Payload)
+if [ "${EXCLUDE_OPENIN_APPEX:-0}" = "1" ]; then
+  IPA_CONTENTS=$(mktemp)
+  unzip -Z1 "$OUTPUT" > "$IPA_CONTENTS"
+  if FOUND_APPEX=$(grep -E '(^|/)[^/]*\.appex(/|$)' "$IPA_CONTENTS"); then
+    rm -f "$IPA_CONTENTS"
+    echo "❌ Experimental packaging failed: app extension found in $OUTPUT:"
+    echo "$FOUND_APPEX"
+    rm -rf "$TMP"
+    exit 1
+  else
+    GREP_STATUS=$?
+    if [ "$GREP_STATUS" -ne 1 ]; then
+      rm -f "$IPA_CONTENTS"
+      echo "❌ Could not inspect IPA contents: $OUTPUT"
+      rm -rf "$TMP"
+      exit 1
+    fi
+  fi
+  rm -f "$IPA_CONTENTS"
+fi
 rm -rf "$TMP"
 
 IPA_SIZE=$(stat -f%z "$OUTPUT" 2>/dev/null || stat -c%s "$OUTPUT" 2>/dev/null)

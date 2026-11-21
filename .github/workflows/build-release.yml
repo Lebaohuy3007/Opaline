@@ -3,7 +3,7 @@ name: Build IPA
 # Every push to main builds the IPA and creates a DRAFT release with it
 # attached. Publishing the draft (manually, after reviewing the notes) fires
 # publish-source.yml, which updates source/apps.json — so the source never
-# points at a download URL that isn't live yet.
+# points at a download URL that isn't live yet. Releases contain the IPA only.
 
 on:
   push:
@@ -101,9 +101,6 @@ jobs:
           XCODEBUILD_EXTRA_ARGS: CODE_SIGNING_ALLOWED=NO
         run: ./make_ipa.sh
 
-      - name: Build Cydia/Sileo debs
-        run: ./make_deb.sh
-
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -119,8 +116,6 @@ jobs:
             done
           gh release create "$VERSION" \
             "Opaline_${VERSION}.ipa" \
-            "Opaline_${VERSION}_iphoneos-arm.deb" \
-            "Opaline_${VERSION}_iphoneos-arm64.deb" \
             --draft \
             --title "$VERSION" \
             --generate-notes \

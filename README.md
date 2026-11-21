@@ -137,6 +137,16 @@ cp Config/Local.xcconfig.example Config/Local.xcconfig
 ./make_ipa.sh
 ```
 
+To create an experimental IPA that omits the share-sheet extension while preserving
+the normal IPA build, use:
+
+```bash
+EXCLUDE_OPENIN_APPEX=1 UPDATE_SOURCE=0 ./make_ipa.sh
+```
+
+This produces `Opaline_<version>_NoOpenIn.ipa`. The default `./make_ipa.sh` command
+continues to produce the full IPA including `OpalineOpenIn.appex`.
+
 ### Jailbroken devices
 
 **Option 1 — Cydia/Sileo repo (recommended)**
@@ -149,7 +159,7 @@ https://verback2308.github.io/repo/
 
 Rootful (`iphoneos-arm`) and rootless (`iphoneos-arm64`) packages are provided; Sileo, Zebra and Cydia are supported. Every released version stays available in the repo, so you can also install or roll back to an older one (Sileo/Zebra: package page → version list).
 
-Pick one channel and stay on it — the repo package and the IPA share a bundle identifier, and having both installed leaves an app icon the Home Screen cannot delete. Already have the other one? Remove it first: the IPA from the Home Screen, the repo package from your package manager (or `dpkg -r com.verback.ytlite` over SSH).
+Pick one channel and stay on it — the repo package and the IPA share a bundle identifier, and having both installed leaves an app icon the Home Screen cannot delete. The Fork bundle ID is `com.verback.YTLiteFork`, so it installs as a separate app from older `com.verback.YTLite` builds and cannot reuse their keychain data. Already have the other channel installed? Remove it first: the IPA from the Home Screen, the repo package from your package manager (or `dpkg -r com.verback.ytlite` over SSH).
 
 **Option 2 — Manual install**
 
@@ -217,7 +227,7 @@ cp Config/Local.xcconfig.example Config/Local.xcconfig
 open Opaline.xcodeproj
 ```
 
-Edit `Config/Local.xcconfig` and set your own `PRODUCT_BUNDLE_IDENTIFIER`.
+Edit `Config/Local.xcconfig` and set your own `PRODUCT_BUNDLE_IDENTIFIER`. The default Fork bundle ID is `com.verback.YTLiteFork`.
 `APP_MANIFEST_URL` in the same file points the update check at a release
 manifest — leave the default to follow this repository, or aim it at a file
 served from your own machine to test notifications. Release builds get the

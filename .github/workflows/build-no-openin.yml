@@ -1,0 +1,98 @@
+name: Build IPA Without OpenIn Extension
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Pin SwiftLint 0.63.3
+        run: |
+          curl -sL -o "$RUNNER_TEMP/swiftlint.zip" \
+            https://github.com/realm/SwiftLint/releases/download/0.63.3/portable_swiftlint.zip
+          unzip -oq "$RUNNER_TEMP/swiftlint.zip" -d "$RUNNER_TEMP/swiftlint"
+          sudo install -m 755 "$RUNNER_TEMP/swiftlint/swiftlint" "$(brew --prefix)/bin/swiftlint"
+          swiftlint version
+
+      - name: Install ldid-procursus
+        run: |
+          brew unlink ldid 2>/dev/null || true
+          brew install ldid-procursus
+          ldid 2>&1 | head -1
+
+      - name: Configure local build settings
+        run: |
+          cp Config/Local.xcconfig.example Config/Local.xcconfig
+          sed -i '' '/^APP_MANIFEST_URL/d' Config/Local.xcconfig
+          if [ "${GITHUB_REPOSITORY%%/*}" = "verback2308" ]; then
+            printf 'APP_MANIFEST_URL = https:/$()/verback2308.github.io/repo/apps.json\n' \
+              >> Config/Local.xcconfig
+          else
+            printf 'APP_MANIFEST_URL = https:/$()/raw.githubusercontent.com/%s/main/source/apps.json\n' \
+              "$GITHUB_REPOSITORY" >> Config/Local.xcconfig
+          fi
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build IPA
+        env:
+          UPDATE_SOURCE: "0"
+          XCODEBUILD_EXTRA_ARGS: CODE_SIGNING_ALLOWED=NO
+        run: EXCLUDE_OPENIN_APPEX=1 UPDATE_SOURCE=0 ./make_ipa.sh
+
+      - name: Verify IPA excludes OpalineOpenIn.appex
+        id: verify
+        run: |
+          IPA_COUNT=$(find . -maxdepth 1 -type f -name 'Opaline_*_NoOpenIn.ipa' | wc -l | tr -d ' ')
+          if [ "$IPA_COUNT" -ne 1 ]; then
+            echo "Expected exactly one Opaline *_NoOpenIn.ipa, found $IPA_COUNT"
+            exit 1
+          fi
+          IPA=$(find . -maxdepth 1 -type f -name 'Opaline_*_NoOpenIn.ipa' -print -quit)
+          unzip -Z1 "$IPA" > "$RUNNER_TEMP/ipa-contents.txt"
+          if grep -E '(^|/)[^/]*\.appex(/|$)' "$RUNNER_TEMP/ipa-contents.txt"; then
+            echo "Verification failed: an .appex entry is present in $IPA"
+            exit 1
+          fi
+
+          CHECK_DIR="$RUNNER_TEMP/verify-no-openin"
+          rm -rf "$CHECK_DIR"
+          mkdir -p "$CHECK_DIR"
+          unzip -q "$IPA" -d "$CHECK_DIR"
+          FOUND_APPEX=$(find "$CHECK_DIR/Payload" -name '*.appex' -print -quit)
+          if [ -n "$FOUND_APPEX" ]; then
+            echo "Verification failed: an .appex bundle exists at $FOUND_APPEX"
+            exit 1
+          fi
+
+          NEEDLES="com.verback.YTLite.OpenIn com.verback.YTLiteFork.OpenIn"
+          find "$CHECK_DIR/Payload" -type f -name '*.plist' -print0 \
+            > "$RUNNER_TEMP/ipa-plists.list"
+          while IFS= read -r -d '' plist; do
+            plist_xml=$(plutil -convert xml1 -o - "$plist")
+            for NEEDLE in $NEEDLES; do
+              if printf '%s\n' "$plist_xml" | grep -F "$NEEDLE" >/dev/null; then
+                echo "Verification failed: $NEEDLE remains in plist metadata: $plist"
+                exit 1
+              fi
+            done
+          done < "$RUNNER_TEMP/ipa-plists.list"
+
+          echo "Verified: $IPA contains no .appex bundles or OpenIn bundle-ID metadata"
+          echo "ipa=$IPA" >> "$GITHUB_OUTPUT"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Opaline-NoOpenIn-${{ github.run_id }}
+          path: ${{ steps.verify.outputs.ipa }}
+          if-no-files-found: error

@@ -7,7 +7,7 @@
   "apps": [
     {
       "name": "Opaline",
-      "bundleIdentifier": "com.verback.YTLite",
+      "bundleIdentifier": "com.verback.YTLiteFork",
       "developerName": "verback2308",
       "subtitle": "YouTube client for iOS 12+",
       "versions": [
@@ -23,7 +23,7 @@
           "version": "1.11.0",
           "date": "2026-08-26T14:49:46Z",
           "localizedDescription": "**New**\n\n- Double tap to pause ([#107](https://github.com/verback2308/Opaline/issues/107)). The player is split into three zones: a quarter on each side seeks, and the half between them pauses. Nothing appears over the video when you use them.\n- Separate default quality for Wi-Fi and mobile data ([#108](https://github.com/verback2308/Opaline/issues/108)). Two rows in Settings; the quality you already picked stays as your Wi-Fi setting.\n- Remove a video from watch history ([#105](https://github.com/verback2308/Opaline/issues/105)) and tell the feed it missed ([#106](https://github.com/verback2308/Opaline/issues/106)). The video menu now shows what YouTube offers for that video — \"Not interested\", \"Don't recommend channel\", \"Hide\", \"Remove from watch history\" — and the video leaves the list.\n\n**Fixes**\n\n- Playback stays paused when headphones come out ([#104](https://github.com/verback2308/Opaline/issues/104)). The pause button on headphones, Control Center, the lock screen and CarPlay are all treated as your pause now, so nothing plays on the speaker.",
-          "downloadURL": "https://github.com/verback2308/Opaline/releases/download/1.11.0/Opaline_1.11.0.ipa",
+          "downloadURL": "https:/github.com/verback2308/Opaline/releases/download/1.11.0/Opaline_1.11.0.ipa",
           "size": 6666724,
           "minOSVersion": "12.0"
         },

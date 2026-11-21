@@ -110,7 +110,7 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.verback.YTLite.deeplink</string>
+			<string>com.verback.YTLiteFork.deeplink</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>ytlite</string>
